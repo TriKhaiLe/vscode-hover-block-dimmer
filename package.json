@@ -1,0 +1,215 @@
+{
+  "name": "vscode-hover-block-dimmer",
+  "displayName": "HoverBlock Dimmer (Line & Block Focus)",
+  "description": "Keep the hovered or active code block at full brightness while dimming or blurring surrounding lines.",
+  "version": "0.1.0",
+  "publisher": "local-dev",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Visualization"
+  ],
+  "keywords": [
+    "hover",
+    "block",
+    "dimmer",
+    "focus",
+    "spotlight",
+    "dim",
+    "blur",
+    "distraction free"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "hoverBlockDimmer.toggle",
+        "title": "HoverBlock Dimmer: Toggle On / Off",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "hoverBlockDimmer.quickMenu",
+        "title": "HoverBlock Dimmer: Open Settings Menu (Effect / Trigger / Scope)",
+        "icon": "$(settings-gear)"
+      },
+      {
+        "command": "hoverBlockDimmer.switchEffectStyle",
+        "title": "HoverBlock Dimmer: Switch Effect Style (Dim+Blur / Dim Only / Blur Only / Gradient)"
+      },
+      {
+        "command": "hoverBlockDimmer.switchTriggerMode",
+        "title": "HoverBlock Dimmer: Switch Trigger Mode (Cursor + Mouse Hover / Mouse Hover Only / Cursor Only)"
+      },
+      {
+        "command": "hoverBlockDimmer.switchFocusScope",
+        "title": "HoverBlock Dimmer: Switch Focus Scope (1 Line / Paragraph / Code Block)"
+      },
+      {
+        "command": "hoverBlockDimmer.applyPreset",
+        "title": "HoverBlock Dimmer: Apply Intensity Preset (2-Tier Block Dim / Subtle / Deep Dim+Blur)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "hoverBlockDimmer.toggle",
+        "key": "ctrl+alt+f",
+        "mac": "cmd+alt+f",
+        "when": "editorTextFocus"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "hoverBlockDimmer.toggle",
+          "group": "navigation@100"
+        },
+        {
+          "command": "hoverBlockDimmer.quickMenu",
+          "group": "navigation@101"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "hoverBlockDimmer.toggle",
+          "group": "9_hoverBlockDimmer@1"
+        },
+        {
+          "command": "hoverBlockDimmer.quickMenu",
+          "group": "9_hoverBlockDimmer@2"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "HoverBlock Dimmer",
+      "properties": {
+        "hoverBlockDimmer.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable or disable HoverBlock Dimmer line/block dimming and blur."
+        },
+        "hoverBlockDimmer.triggerMode": {
+          "type": "string",
+          "enum": [
+            "cursorAndHover",
+            "hoverOnly",
+            "cursorOnly"
+          ],
+          "enumDescriptions": [
+            "Track both cursor/selection movement and mouse hover over lines.",
+            "Track mouse hover over lines only (via VS Code hover events).",
+            "Track cursor/selection movement only."
+          ],
+          "default": "cursorAndHover",
+          "description": "Whether the focused line/block tracks mouse hover, cursor movement, or both."
+        },
+        "hoverBlockDimmer.focusScope": {
+          "type": "string",
+          "enum": [
+            "line",
+            "paragraph",
+            "block"
+          ],
+          "enumDescriptions": [
+            "Focus on 1 line (or the active multi-line selection).",
+            "Focus on the contiguous non-empty paragraph around the active line.",
+            "Focus on the enclosing indentation code block."
+          ],
+          "default": "block",
+          "description": "How much code around the anchor line stays in clear focus."
+        },
+        "hoverBlockDimmer.contextLines": {
+          "type": "number",
+          "default": 1,
+          "minimum": 0,
+          "maximum": 30,
+          "description": "Extra lines above and below the focused line to keep clear (also used as fallback padding when a block is 1 line)."
+        },
+        "hoverBlockDimmer.maxBlockLines": {
+          "type": "number",
+          "default": 15,
+          "minimum": 3,
+          "maximum": 100,
+          "description": "Maximum lines a detected code block can span before falling back to local paragraph or context lines."
+        },
+        "hoverBlockDimmer.nearLines": {
+          "type": "number",
+          "default": 1,
+          "minimum": 0,
+          "maximum": 10,
+          "description": "Number of slightly dimmed transition lines (nearDecoration) immediately above and below the focused block."
+        },
+        "hoverBlockDimmer.nearOpacity": {
+          "type": "number",
+          "default": 0.55,
+          "minimum": 0.1,
+          "maximum": 0.95,
+          "description": "Opacity of the transition lines (nearDecoration) immediately bordering the focused block."
+        },
+        "hoverBlockDimmer.effectStyle": {
+          "type": "string",
+          "enum": [
+            "dimAndBlur",
+            "dimOnly",
+            "blurOnly",
+            "gradient"
+          ],
+          "enumDescriptions": [
+            "Dim opacity and apply CSS blur filter to unfocused lines.",
+            "Reduce opacity of unfocused lines without blurring (nearDecoration + dimDecoration).",
+            "Apply CSS blur filter to unfocused lines without dimming opacity.",
+            "Gradually increase dimming and blur across near, mid, and far bands."
+          ],
+          "default": "dimOnly",
+          "description": "How unfocused lines are visually styled."
+        },
+        "hoverBlockDimmer.dimOpacity": {
+          "type": "number",
+          "default": 0.22,
+          "minimum": 0.05,
+          "maximum": 0.95,
+          "description": "Opacity of outer strongly dimmed lines (dimDecoration; 0.05 = very faint, 0.95 = barely dimmed)."
+        },
+        "hoverBlockDimmer.blurAmountPx": {
+          "type": "number",
+          "default": 1.5,
+          "minimum": 0,
+          "maximum": 10,
+          "description": "Blur filter radius in pixels applied when blur is enabled."
+        },
+        "hoverBlockDimmer.highlightFocusedLine": {
+          "type": "boolean",
+          "default": false,
+          "description": "Add a subtle spotlight background and left accent border on the focused line(s)."
+        },
+        "hoverBlockDimmer.focusedLineBackground": {
+          "type": "string",
+          "default": "rgba(255, 255, 255, 0.04)",
+          "description": "Background color of the focused spotlight line(s)."
+        },
+        "hoverBlockDimmer.focusedLineBorderColor": {
+          "type": "string",
+          "default": "rgba(56, 189, 248, 0.85)",
+          "description": "Left border color of the focused spotlight line(s)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "node -e \"globalThis.File = require('node:buffer').File; require('./node_modules/@vscode/vsce/vsce')\" vsce package --allow-missing-repository"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.24.0",
+    "typescript": "^5.4.5"
+  }
+}
