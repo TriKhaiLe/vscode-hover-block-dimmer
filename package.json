@@ -34,6 +34,10 @@
         "icon": "$(eye)"
       },
       {
+        "command": "hoverBlockDimmer.toggleMouseHover",
+        "title": "HoverBlock Dimmer: Toggle Mouse Hover Detection (On / Off)"
+      },
+      {
         "command": "hoverBlockDimmer.quickMenu",
         "title": "HoverBlock Dimmer: Open Settings Menu (Effect / Trigger / Scope)",
         "icon": "$(settings-gear)"
@@ -96,17 +100,17 @@
         "hoverBlockDimmer.triggerMode": {
           "type": "string",
           "enum": [
+            "cursorOnly",
             "cursorAndHover",
-            "hoverOnly",
-            "cursorOnly"
+            "hoverOnly"
           ],
           "enumDescriptions": [
+            "Track cursor/selection position only (recommended, lowest CPU usage — mouse hover disabled).",
             "Track both cursor/selection movement and mouse hover over lines.",
-            "Track mouse hover over lines only (via VS Code hover events).",
-            "Track cursor/selection movement only."
+            "Track mouse hover over lines only (via VS Code hover events)."
           ],
-          "default": "cursorAndHover",
-          "description": "Whether the focused line/block tracks mouse hover, cursor movement, or both."
+          "default": "cursorOnly",
+          "description": "Whether the focused line/block tracks cursor movement only, mouse hover, or both."
         },
         "hoverBlockDimmer.focusScope": {
           "type": "string",

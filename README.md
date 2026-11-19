@@ -8,8 +8,7 @@ Keep the hovered or active code block at full brightness while dimming or blurri
   - Focused block / active lines keep full brightness with no decoration overlay.
   - Adjacent border lines (`hoverBlockDimmer.nearLines`, default `1`) are slightly dimmed (`hoverBlockDimmer.nearOpacity`, default `0.55`).
   - All outer lines are strongly dimmed (`hoverBlockDimmer.dimOpacity`, default `0.22`).
-- **Mouse Hover + Cursor Tracking (`hoverBlockDimmer.triggerMode`)**: Supports `cursorAndHover`, `hoverOnly`, or `cursorOnly`.
-  > Note: VS Code tracks mouse hover via the `HoverProvider` API after `editor.hover.delay` (default ~300ms). Use the HoverBlock Dimmer quick menu to set `editor.hover.delay` to `50ms` for near-instant hover spotlighting.
+- **Cursor-Only Default (`hoverBlockDimmer.triggerMode: "cursorOnly"`)**: Tracks your cursor/selection position with minimal CPU overhead. Mouse hover (`cursorAndHover` or `hoverOnly`) is optional and can be toggled on/off anytime from the status bar quick menu (`HoverBlock Dimmer: Toggle Mouse Hover Detection`) — when disabled, no `HoverProvider` is registered at all.
 - **Multiple Focus Scopes (`hoverBlockDimmer.focusScope`)**: Switch between **Code Block** (`block`, capped by `hoverBlockDimmer.maxBlockLines`), **Paragraph** (`paragraph`), and **1 Line** (`line`).
 - **Flexible Visual Effects (`hoverBlockDimmer.effectStyle`)**:
   - `dimOnly` (default): 2-tier opacity dimming (`nearDecoration` + `dimDecoration`)

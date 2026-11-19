@@ -12,6 +12,7 @@ export class DecorationManager implements vscode.Disposable {
   private dimDecoration: vscode.TextEditorDecorationType | undefined;
 
   private activeConfigSignature = "";
+  private readonly appliedStateByEditor = new Map<string, string>();
 
   constructor(config: FocusModeConfig) {
     this.rebuildDecorations(config);
@@ -45,6 +46,25 @@ export class DecorationManager implements vscode.Disposable {
     const maxLine = doc.lineCount - 1;
     const focusStart = Math.max(0, Math.min(focusSpan.startLine, maxLine));
     const focusEnd = Math.max(focusStart, Math.min(focusSpan.endLine, maxLine));
+    const scanBounds = computeScanBounds(editor);
+
+    const editorKey = getEditorKey(editor);
+    const stateKey = JSON.stringify([
+      this.activeConfigSignature,
+      config.nearLines,
+      focusStart,
+      focusEnd,
+      scanBounds.startLine,
+      scanBounds.endLine,
+      doc.lineCount,
+      doc.lineAt(focusEnd).text.length,
+      doc.lineAt(scanBounds.endLine).text.length,
+    ]);
+
+    if (this.appliedStateByEditor.get(editorKey) === stateKey) {
+      return;
+    }
+    this.appliedStateByEditor.set(editorKey, stateKey);
 
     // Focused block receives no decoration unless highlightFocusedLine is enabled.
     if (this.spotlightDecoration) {
@@ -57,7 +77,6 @@ export class DecorationManager implements vscode.Disposable {
       editor.setDecorations(this.spotlightDecoration, [spotlightRange]);
     }
 
-    const scanBounds = computeScanBounds(editor);
     const nearRanges: vscode.Range[] = [];
     const midRanges: vscode.Range[] = [];
     const dimRanges: vscode.Range[] = [];
@@ -145,6 +164,8 @@ export class DecorationManager implements vscode.Disposable {
   }
 
   public clearDecorations(editor: vscode.TextEditor): void {
+    this.appliedStateByEditor.delete(getEditorKey(editor));
+
     if (this.spotlightDecoration) {
       editor.setDecorations(this.spotlightDecoration, []);
     }
@@ -163,9 +184,29 @@ export class DecorationManager implements vscode.Disposable {
     for (const editor of vscode.window.visibleTextEditors) {
       this.clearDecorations(editor);
     }
+    this.appliedStateByEditor.clear();
+  }
+
+  public invalidateDocument(uri: vscode.Uri): void {
+    const prefix = `${uri.toString()}::`;
+    for (const key of this.appliedStateByEditor.keys()) {
+      if (key.startsWith(prefix)) {
+        this.appliedStateByEditor.delete(key);
+      }
+    }
+  }
+
+  public pruneHiddenEditors(visibleEditors: readonly vscode.TextEditor[]): void {
+    const activeKeys = new Set(visibleEditors.map((e) => getEditorKey(e)));
+    for (const key of this.appliedStateByEditor.keys()) {
+      if (!activeKeys.has(key)) {
+        this.appliedStateByEditor.delete(key);
+      }
+    }
   }
 
   public dispose(): void {
+    this.appliedStateByEditor.clear();
     this.disposeDecorationTypes();
   }
 
@@ -214,6 +255,10 @@ export class DecorationManager implements vscode.Disposable {
     this.midDecoration = undefined;
     this.dimDecoration = undefined;
   }
+}
+
+function getEditorKey(editor: vscode.TextEditor): string {
+  return `${editor.document.uri.toString()}::${editor.viewColumn ?? "none"}`;
 }
 
 function createBandDecorationType(

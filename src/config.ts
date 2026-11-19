@@ -30,12 +30,12 @@ const VALID_EFFECT_STYLES: readonly EffectStyle[] = [
 export function getFocusModeConfig(): FocusModeConfig {
   const cfg = vscode.workspace.getConfiguration(CONFIG_SECTION);
 
-  const rawTrigger = cfg.get<string>("triggerMode", "cursorAndHover");
+  const rawTrigger = cfg.get<string>("triggerMode", "cursorOnly");
   const triggerMode: TriggerMode = VALID_TRIGGER_MODES.includes(
     rawTrigger as TriggerMode
   )
     ? (rawTrigger as TriggerMode)
-    : "cursorAndHover";
+    : "cursorOnly";
 
   const rawScope = cfg.get<string>("focusScope", "block");
   const focusScope: FocusScope = VALID_FOCUS_SCOPES.includes(

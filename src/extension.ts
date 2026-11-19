@@ -22,6 +22,7 @@ export function activate(context: vscode.ExtensionContext): void {
   let config = getFocusModeConfig();
   const decorationManager = new DecorationManager(config);
   const editorAnchors = new Map<string, FocusAnchor>();
+  let hoverProviderDisposable: vscode.Disposable | undefined;
 
   const statusBarItem = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Right,
@@ -100,61 +101,115 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   };
 
-  // Track mouse hover across lines silently without displaying a tooltip.
-  const hoverProviderDisposable = vscode.languages.registerHoverProvider(
-    { scheme: "*" },
-    {
-      provideHover(document, position) {
-        if (
-          !config.enabled ||
-          config.triggerMode === "cursorOnly" ||
-          IGNORED_SCHEMES.has(document.uri.scheme)
-        ) {
-          return undefined;
-        }
+  const syncHoverProvider = (): void => {
+    const shouldRegisterHover =
+      config.enabled && config.triggerMode !== "cursorOnly";
 
-        const docUri = document.uri.toString();
-        for (const editor of vscode.window.visibleTextEditors) {
-          if (editor.document.uri.toString() === docUri) {
-            editorAnchors.set(getEditorKey(editor), {
-              startLine: position.line,
-              endLine: position.line,
-              source: "hover",
-            });
-            refreshEditor(editor);
-          }
-        }
+    if (shouldRegisterHover && !hoverProviderDisposable) {
+      // Only register HoverProvider when mouse hover detection is enabled
+      // so cursor-only mode incurs zero VS Code hover IPC overhead.
+      hoverProviderDisposable = vscode.languages.registerHoverProvider(
+        { scheme: "*" },
+        {
+          provideHover(document, position) {
+            if (
+              !config.enabled ||
+              config.triggerMode === "cursorOnly" ||
+              IGNORED_SCHEMES.has(document.uri.scheme)
+            ) {
+              return undefined;
+            }
 
-        return undefined;
-      },
+            const docUri = document.uri.toString();
+            for (const editor of vscode.window.visibleTextEditors) {
+              if (editor.document.uri.toString() === docUri) {
+                const key = getEditorKey(editor);
+                const prevAnchor = editorAnchors.get(key);
+                if (
+                  prevAnchor &&
+                  prevAnchor.source === "hover" &&
+                  prevAnchor.startLine === position.line &&
+                  prevAnchor.endLine === position.line
+                ) {
+                  continue;
+                }
+                editorAnchors.set(key, {
+                  startLine: position.line,
+                  endLine: position.line,
+                  source: "hover",
+                });
+                refreshEditor(editor);
+              }
+            }
+
+            return undefined;
+          },
+        }
+      );
+    } else if (!shouldRegisterHover && hoverProviderDisposable) {
+      hoverProviderDisposable.dispose();
+      hoverProviderDisposable = undefined;
     }
-  );
+  };
+
+  const toggleMouseHover = async (): Promise<void> => {
+    const isHoverActive = config.triggerMode !== "cursorOnly";
+    const nextMode: TriggerMode = isHoverActive
+      ? "cursorOnly"
+      : "cursorAndHover";
+    await updateConfigValue("triggerMode", nextMode);
+
+    if (nextMode === "cursorOnly") {
+      const editorHoverCfg = vscode.workspace.getConfiguration("editor");
+      const currentDelay = editorHoverCfg.get<number>("hover.delay", 300);
+      if (currentDelay < 100) {
+        await editorHoverCfg.update(
+          "hover.delay",
+          300,
+          vscode.ConfigurationTarget.Global
+        );
+      }
+    }
+  };
+
+  syncHoverProvider();
 
   context.subscriptions.push(
     decorationManager,
     statusBarItem,
-    hoverProviderDisposable,
+    {
+      dispose: () => {
+        hoverProviderDisposable?.dispose();
+        hoverProviderDisposable = undefined;
+      },
+    },
 
     vscode.window.onDidChangeTextEditorSelection((event) => {
       if (IGNORED_SCHEMES.has(event.textEditor.document.uri.scheme)) {
         return;
       }
+      const key = getEditorKey(event.textEditor);
       if (config.triggerMode === "hoverOnly") {
         // Still initialize if editor had no anchor yet.
-        if (!editorAnchors.has(getEditorKey(event.textEditor))) {
-          editorAnchors.set(
-            getEditorKey(event.textEditor),
-            getSelectionAnchor(event.textEditor)
-          );
+        if (!editorAnchors.has(key)) {
+          editorAnchors.set(key, getSelectionAnchor(event.textEditor));
           refreshEditor(event.textEditor);
         }
         return;
       }
 
-      editorAnchors.set(
-        getEditorKey(event.textEditor),
-        getSelectionAnchor(event.textEditor)
-      );
+      const nextAnchor = getSelectionAnchor(event.textEditor);
+      const prevAnchor = editorAnchors.get(key);
+      if (
+        prevAnchor &&
+        prevAnchor.source === "cursor" &&
+        prevAnchor.startLine === nextAnchor.startLine &&
+        prevAnchor.endLine === nextAnchor.endLine
+      ) {
+        return;
+      }
+
+      editorAnchors.set(key, nextAnchor);
       refreshEditor(event.textEditor);
     }),
 
@@ -166,11 +221,18 @@ export function activate(context: vscode.ExtensionContext): void {
       refreshEditor(editor);
     }),
 
-    vscode.window.onDidChangeVisibleTextEditors(() => {
+    vscode.window.onDidChangeVisibleTextEditors((editors) => {
+      decorationManager.pruneHiddenEditors(editors);
       refreshAllVisibleEditors();
     }),
 
     vscode.workspace.onDidChangeTextDocument((event) => {
+      if (
+        event.contentChanges.length === 0 ||
+        IGNORED_SCHEMES.has(event.document.uri.scheme)
+      ) {
+        return;
+      }
       const docUri = event.document.uri.toString();
       for (const editor of vscode.window.visibleTextEditors) {
         if (editor.document.uri.toString() === docUri) {
@@ -186,11 +248,13 @@ export function activate(context: vscode.ExtensionContext): void {
           editorAnchors.delete(key);
         }
       }
+      decorationManager.invalidateDocument(document.uri);
     }),
 
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration("hoverBlockDimmer")) {
         config = getFocusModeConfig();
+        syncHoverProvider();
         decorationManager.syncConfiguration(config);
         refreshAllVisibleEditors();
       }
@@ -199,6 +263,11 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("hoverBlockDimmer.toggle", async () => {
       await updateConfigValue("enabled", !config.enabled);
     }),
+
+    vscode.commands.registerCommand(
+      "hoverBlockDimmer.toggleMouseHover",
+      toggleMouseHover
+    ),
 
     vscode.commands.registerCommand(
       "hoverBlockDimmer.switchEffectStyle",
@@ -226,7 +295,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
 
     vscode.commands.registerCommand("hoverBlockDimmer.quickMenu", async () => {
-      await openQuickMenu(config);
+      await openQuickMenu(config, toggleMouseHover);
     })
   );
 
@@ -234,12 +303,16 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {
-  // Subscriptions handle disposing decorations and status bar items.
+  // Subscriptions handle disposing decorations, hover provider, and status bar items.
 }
 
-async function openQuickMenu(config: FocusModeConfig): Promise<void> {
+async function openQuickMenu(
+  config: FocusModeConfig,
+  toggleMouseHover: () => Promise<void>
+): Promise<void> {
   const editorHoverCfg = vscode.workspace.getConfiguration("editor");
   const currentHoverDelay = editorHoverCfg.get<number>("hover.delay", 300);
+  const isMouseHoverEnabled = config.triggerMode !== "cursorOnly";
 
   interface MenuItem extends vscode.QuickPickItem {
     action: () => Promise<void>;
@@ -254,15 +327,27 @@ async function openQuickMenu(config: FocusModeConfig): Promise<void> {
       action: () => updateConfigValue("enabled", !config.enabled),
     },
     {
+      label: isMouseHoverEnabled
+        ? "$(mouse) Disable Mouse Hover (Cursor Only)"
+        : "$(mouse) Enable Mouse Hover Detection",
+      description: isMouseHoverEnabled
+        ? `Hover On (${config.triggerMode})`
+        : "Hover Off (cursorOnly — lowest CPU)",
+      detail: isMouseHoverEnabled
+        ? "Unregisters HoverProvider and restores editor.hover.delay if lowered"
+        : "Enables Cursor + Mouse Hover line tracking",
+      action: toggleMouseHover,
+    },
+    {
       label: "$(sparkle) Switch Effect Style",
       description: `Current: ${config.effectStyle}`,
       detail: "Dim+Blur, Dim Only, Blur Only, or Gradient Falloff",
       action: () => pickEffectStyle(config.effectStyle),
     },
     {
-      label: "$(mouse) Switch Trigger Mode",
+      label: "$(target) Switch Trigger Mode",
       description: `Current: ${config.triggerMode}`,
-      detail: "Cursor + Mouse Hover, Mouse Hover Only, or Cursor Only",
+      detail: "Cursor Only, Cursor + Mouse Hover, or Mouse Hover Only",
       action: () => pickTriggerMode(config.triggerMode),
     },
     {
@@ -361,6 +446,13 @@ async function pickEffectStyle(current: EffectStyle): Promise<void> {
 async function pickTriggerMode(current: TriggerMode): Promise<void> {
   const options: Array<vscode.QuickPickItem & { value: TriggerMode }> = [
     {
+      label: "Cursor Only (Recommended)",
+      description: current === "cursorOnly" ? "(Current)" : undefined,
+      detail:
+        "Tracks editor cursor/selection only — disables HoverProvider for minimal CPU usage",
+      value: "cursorOnly",
+    },
+    {
       label: "Cursor + Mouse Hover",
       description: current === "cursorAndHover" ? "(Current)" : undefined,
       detail: "Focus moves with both cursor movement and mouse hover",
@@ -371,12 +463,6 @@ async function pickTriggerMode(current: TriggerMode): Promise<void> {
       description: current === "hoverOnly" ? "(Current)" : undefined,
       detail: "Focus follows the line your mouse hovers over",
       value: "hoverOnly",
-    },
-    {
-      label: "Cursor Only",
-      description: current === "cursorOnly" ? "(Current)" : undefined,
-      detail: "Focus follows only your editor cursor/selection",
-      value: "cursorOnly",
     },
   ];
 
